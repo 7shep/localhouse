@@ -71,7 +71,7 @@ function getAssistantResponse(input: string, snapshot: HouseSnapshot) {
   }
 
   if (normalized.includes("server") || normalized.includes("cpu") || normalized.includes("memory") || normalized.includes("disk")) {
-    return `The server looks healthy: CPU is at ${snapshot.system.cpuPercent}%, memory at ${snapshot.system.memoryPercent}%, disk at ${snapshot.system.diskPercent}%, with 7 hours 14 minutes of uptime.`;
+    return `The host looks healthy: CPU is at ${snapshot.system.cpuPercent}%, memory at ${snapshot.system.memoryPercent}%, disk at ${snapshot.system.diskPercent}%, with ${formatDuration(snapshot.system.uptimeSeconds)} of uptime.`;
   }
 
   if (normalized.includes("alex") || normalized.includes("home") || normalized.includes("presence")) {
@@ -89,6 +89,41 @@ function StatusLight({ tone = "good" }: { tone?: "good" | "muted" | "warn" }) {
   return <span className={`status-light status-light--${tone}`} aria-hidden="true" />;
 }
 
+// Project-owned inline SVG icon set. No external assets or third-party licenses required.
+function LocalHouseMark() {
+  return <svg className="brand-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11.2 12 3l9 8.2v9.3H3v-9.3Z" stroke="currentColor" strokeWidth="1.4" /><path d="M8 20.5v-6h8v6M10.5 10.5h3M12 9v3" stroke="currentColor" strokeWidth="1.4" /></svg>;
+}
+
+function RefreshIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" /></svg>;
+}
+
+function WifiIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 8.8a13.2 13.2 0 0 1 17 0M6.6 12.2a8.3 8.3 0 0 1 10.8 0M9.7 15.5a3.5 3.5 0 0 1 4.6 0M12 19h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" /></svg>;
+}
+
+function WeatherIcon({ condition }: { condition: string }) {
+  const normalized = condition.toLowerCase();
+  const isRain = normalized.includes("rain") || normalized.includes("drizzle") || normalized.includes("shower");
+  const isCloud = normalized.includes("cloud") || normalized.includes("overcast") || normalized.includes("fog");
+  return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    {isCloud ? <path d="M8.5 23.5h14a5 5 0 0 0 .4-9.9 8 8 0 0 0-15.4 1.6 4.2 4.2 0 0 0 1 8.3Z" stroke="currentColor" strokeWidth="1.6" /> : <><circle cx="16" cy="16" r="5" stroke="currentColor" strokeWidth="1.6" /><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M25.2 6.8l-2.8 2.8M9.6 22.4l-2.8 2.8" stroke="currentColor" strokeWidth="1.6" /></>}
+    {isRain ? <path d="m12 26-1 3m7-3-1 3m7-3-1 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" /> : null}
+  </svg>;
+}
+
+function SkyIcon({ isNight }: { isNight: boolean }) {
+  return isNight
+    ? <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18.5 15.7A8 8 0 0 1 8.3 5.5 8.2 8.2 0 1 0 18.5 15.7Z" stroke="currentColor" strokeWidth="1.5" /></svg>
+    : <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" stroke="currentColor" strokeWidth="1.5" /></svg>;
+}
+
+function MinecraftWeatherIcon({ weather }: { weather: string }) {
+  return weather === "CLEAR"
+    ? <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 2 1.2 7.8L20 12l-6.8 2.2L12 22l-1.2-7.8L4 12l6.8-2.2L12 2Z" stroke="currentColor" strokeWidth="1.4" /></svg>
+    : <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M3 12h18M5 17h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" /></svg>;
+}
+
 function CardHeader({ index, label, meta }: { index: string; label: string; meta?: string }) {
   return (
     <div className="card-header">
@@ -100,19 +135,23 @@ function CardHeader({ index, label, meta }: { index: string; label: string; meta
 }
 
 export default function Home() {
-  const snapshot = mockHouseSnapshot;
+  const baseline = mockHouseSnapshot;
   const [now, setNow] = useState(() => new Date());
   const [lastRefresh, setLastRefresh] = useState("09:42:18");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isWifiOpen, setIsWifiOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [minecraft, setMinecraft] = useState<MinecraftStatus>(snapshot.minecraft);
+  const [minecraft, setMinecraft] = useState<MinecraftStatus>(baseline.minecraft);
   const [minecraftTelemetry, setMinecraftTelemetry] = useState<"checking" | "live" | "offline">("checking");
-  const [minecraftTicks, setMinecraftTicks] = useState(snapshot.minecraft.timeOfDay);
+  const [minecraftTicks, setMinecraftTicks] = useState(baseline.minecraft.timeOfDay);
+  const [system, setSystem] = useState(baseline.system);
+  const [weather, setWeather] = useState(baseline.weather);
   const [joinCopied, setJoinCopied] = useState(false);
   const [serverDraft, setServerDraft] = useState("");
   const [serverChatStatus, setServerChatStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [wakeState, setWakeState] = useState<"idle" | "waking" | "error">("idle");
+  const snapshot: HouseSnapshot = { ...baseline, minecraft, system, weather };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -154,6 +193,30 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
 
+  async function refreshSystemData() {
+    const response = await fetch("/api/system", { cache: "no-store" });
+    if (response.ok) setSystem(await response.json());
+  }
+
+  async function refreshWeatherData() {
+    const response = await fetch("/api/weather", { cache: "no-store" });
+    if (response.ok) setWeather(await response.json());
+  }
+
+  async function refreshHouseData() {
+    await Promise.all([refreshSystemData(), refreshWeatherData()]);
+  }
+
+  useEffect(() => {
+    void refreshHouseData();
+    const systemTimer = window.setInterval(() => void refreshSystemData(), 10000);
+    const weatherTimer = window.setInterval(() => void refreshWeatherData(), 300000);
+    return () => {
+      window.clearInterval(systemTimer);
+      window.clearInterval(weatherTimer);
+    };
+  }, []);
+
   const statusSummary = useMemo(() => {
     if (isRefreshing) return "checking systems";
     if (minecraftTelemetry === "checking") return "connecting to minecraft";
@@ -165,6 +228,7 @@ export default function Home() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     void refreshMinecraft();
+    void refreshHouseData();
     window.setTimeout(() => {
       setLastRefresh(formatTime(new Date()));
       setIsRefreshing(false);
@@ -177,7 +241,7 @@ export default function Home() {
     setMessages((current) => [
       ...current,
       { role: "user", text: trimmed },
-      { role: "assistant", text: getAssistantResponse(trimmed, { ...snapshot, minecraft }) },
+      { role: "assistant", text: getAssistantResponse(trimmed, { ...snapshot, minecraft, system, weather }) },
     ]);
     setDraft("");
   }
@@ -204,6 +268,20 @@ export default function Home() {
     }
   }
 
+  async function wakeMinecraft() {
+    if (wakeState === "waking") return;
+    setWakeState("waking");
+    try {
+      const response = await fetch("/api/minecraft/wake", { method: "POST" });
+      if (!response.ok) throw new Error("Unable to wake server");
+      window.setTimeout(() => void refreshMinecraft(), 2500);
+      window.setTimeout(() => setWakeState("idle"), 15000);
+    } catch {
+      setWakeState("error");
+      window.setTimeout(() => setWakeState("idle"), 2800);
+    }
+  }
+
   async function copyJoinAddress() {
     try {
       await navigator.clipboard.writeText(minecraft.joinAddress);
@@ -222,7 +300,7 @@ export default function Home() {
       <div className="scanlines" aria-hidden="true" />
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">LH</div>
+          <div className="brand-mark"><LocalHouseMark /></div>
           <div>
             <div className="brand-name">localhouse<span>_</span></div>
             <div className="brand-subtitle">HOME OPERATIONS / UNIT 01</div>
@@ -240,10 +318,10 @@ export default function Home() {
             <time>{formatTime(now)}</time>
           </div>
           <button className="icon-button" onClick={refreshTelemetry} aria-label="Refresh telemetry" title="Refresh telemetry">
-            <span className={isRefreshing ? "refresh-glyph is-spinning" : "refresh-glyph"}>↻</span>
+            <span className={isRefreshing ? "refresh-glyph is-spinning" : "refresh-glyph"}><RefreshIcon /></span>
           </button>
           <button className="wifi-button" onClick={() => setIsWifiOpen(true)}>
-            <span className="wifi-glyph" aria-hidden="true">▦</span>
+            <span className="wifi-glyph"><WifiIcon /></span>
             <span>WIFI ACCESS</span>
           </button>
         </div>
@@ -275,22 +353,22 @@ export default function Home() {
         </article>
 
         <article className="telemetry-card weather-card">
-          <CardHeader index="02" label="Weather" meta={snapshot.weather.location} />
+          <CardHeader index="02" label="Weather" meta={`${snapshot.weather.location} / LIVE`} />
           <div className="weather-main">
             <div className="weather-temp"><data value={snapshot.weather.temperatureC}>{snapshot.weather.temperatureC}</data><span>°C</span></div>
-            <div className="weather-condition"><span className="weather-glyph" aria-hidden="true">◒</span><span>PARTLY<br />CLOUDY</span></div>
+            <div className="weather-condition"><span className="weather-glyph"><WeatherIcon condition={snapshot.weather.condition} /></span><span>{snapshot.weather.condition}</span></div>
           </div>
           <div className="high-low"><span><b>H</b> {snapshot.weather.highC}°</span><span><b>L</b> {snapshot.weather.lowC}°</span><span className="weather-updated">UPDATED {snapshot.weather.updatedAt}</span></div>
         </article>
 
         <article className="telemetry-card server-card">
-          <CardHeader index="03" label="This PC / Server" meta="LOCAL NODE / ONLINE" />
+          <CardHeader index="03" label="This PC / Server" meta="HOST NODE / LIVE" />
           <dl className="metrics-list">
             <div><dt>CPU</dt><dd><span className="metric-value">{snapshot.system.cpuPercent}</span><span className="metric-unit">%</span><span className="metric-bar"><i style={{ width: `${snapshot.system.cpuPercent}%` }} /></span></dd></div>
             <div><dt>MEMORY</dt><dd><span className="metric-value">{snapshot.system.memoryPercent}</span><span className="metric-unit">%</span><span className="metric-bar"><i style={{ width: `${snapshot.system.memoryPercent}%` }} /></span></dd></div>
             <div><dt>DISK</dt><dd><span className="metric-value">{snapshot.system.diskPercent}</span><span className="metric-unit">%</span><span className="metric-bar"><i style={{ width: `${snapshot.system.diskPercent}%` }} /></span></dd></div>
           </dl>
-          <div className="uptime-row"><span>UPTIME</span><strong>07h 14m 32s</strong></div>
+          <div className="uptime-row"><span>UPTIME</span><strong>{formatDuration(snapshot.system.uptimeSeconds)}</strong></div>
         </article>
 
         <article className="telemetry-card presence-card">
@@ -311,6 +389,7 @@ export default function Home() {
                 <StatusLight tone={minecraft.online ? "good" : "warn"} />
                 <strong>{minecraft.online ? "ONLINE" : "OFFLINE"}</strong>
               </div>
+              {!minecraft.online ? <button className="minecraft-wake" type="button" onClick={wakeMinecraft} disabled={minecraftTelemetry === "checking" || wakeState === "waking"}>{wakeState === "waking" ? "WAKING..." : wakeState === "error" ? "TRY AGAIN" : "WAKE SERVER"}<span aria-hidden="true">↟</span></button> : null}
               <div className="minecraft-count"><data value={minecraft.playerCount}>{minecraft.playerCount}</data><span>/ {minecraft.maxPlayers} PLAYERS</span></div>
               <div className="minecraft-world-name">{minecraft.world}</div>
               <div className="minecraft-facts">
@@ -333,10 +412,10 @@ export default function Home() {
 
             <div className="minecraft-world-state">
               <div className={`sky-clock ${minecraftIsNight ? "is-night" : ""}`}>
-                <span className="sky-orb" aria-hidden="true">{minecraftIsNight ? "☾" : "☼"}</span>
+                <span className="sky-orb"><SkyIcon isNight={minecraftIsNight} /></span>
                 <span><strong>{formatMinecraftTime(minecraftTicks)}</strong><small>{minecraftIsNight ? "NIGHT" : "DAYLIGHT"} / IN-GAME</small></span>
               </div>
-              <div className="minecraft-weather"><span className="weather-pixel" aria-hidden="true">{minecraft.weather === "CLEAR" ? "✦" : "≋"}</span><span><b>{minecraft.weather}</b><small>OVERWORLD WEATHER</small></span></div>
+              <div className="minecraft-weather"><span className="weather-pixel"><MinecraftWeatherIcon weather={minecraft.weather} /></span><span><b>{minecraft.weather}</b><small>OVERWORLD WEATHER</small></span></div>
               <div className="minecraft-uptime"><span>SERVER UPTIME</span><strong>{formatDuration(minecraft.uptimeSeconds)}</strong></div>
             </div>
           </div>
@@ -387,7 +466,7 @@ export default function Home() {
 
       <footer className="footerbar">
         <div className="footer-status"><StatusLight /> <span>LOCALHOUSE</span></div>
-        <div className="footer-services"><span><StatusLight /> INTERNET</span><span><StatusLight /> OLLAMA</span><button onClick={() => setIsWifiOpen(true)}><span className="wifi-glyph" aria-hidden="true">▦</span> WIFI</button></div>
+        <div className="footer-services"><span><StatusLight /> INTERNET</span><span><StatusLight /> OLLAMA</span><button onClick={() => setIsWifiOpen(true)}><span className="wifi-glyph"><WifiIcon /></span> WIFI</button></div>
         <div className="footer-build">{minecraftTelemetry === "live" ? "RCON TELEMETRY / LIVE" : "RCON TELEMETRY / WAITING"}</div>
       </footer>
 
