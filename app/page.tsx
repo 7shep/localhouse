@@ -142,6 +142,8 @@ export default function Home() {
   const [isWifiOpen, setIsWifiOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [aiStatus, setAiStatus] = useState<"checking" | "ready" | "offline">("checking");
+  const [isAskingAI, setIsAskingAI] = useState(false);
   const [minecraft, setMinecraft] = useState<MinecraftStatus>(baseline.minecraft);
   const [minecraftTelemetry, setMinecraftTelemetry] = useState<"checking" | "live" | "offline">("checking");
   const [minecraftTicks, setMinecraftTicks] = useState(baseline.minecraft.timeOfDay);
@@ -217,6 +219,12 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    fetch("/api/ai", { cache: "no-store" })
+      .then((response) => setAiStatus(response.ok ? "ready" : "offline"))
+      .catch(() => setAiStatus("offline"));
+  }, []);
+
   const statusSummary = useMemo(() => {
     if (isRefreshing) return "checking systems";
     if (minecraftTelemetry === "checking") return "connecting to minecraft";
@@ -235,15 +243,39 @@ export default function Home() {
     }, 700);
   }
 
-  function submitQuestion(question = draft) {
+  async function submitQuestion(question = draft) {
     const trimmed = question.trim();
-    if (!trimmed) return;
+    if (!trimmed || isAskingAI) return;
+    const history = messages.slice(-8);
     setMessages((current) => [
       ...current,
       { role: "user", text: trimmed },
-      { role: "assistant", text: getAssistantResponse(trimmed, { ...snapshot, minecraft, system, weather }) },
     ]);
     setDraft("");
+    setIsAskingAI(true);
+    try {
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmed,
+          history,
+          snapshot: { ...snapshot, minecraft, system, weather },
+        }),
+      });
+      const data = await response.json() as { answer?: string; error?: string };
+      if (!response.ok || !data.answer) throw new Error(data.error || "Ollama is unavailable");
+      setMessages((current) => [...current, { role: "assistant", text: data.answer! }]);
+      setAiStatus("ready");
+    } catch {
+      setAiStatus("offline");
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: `Ollama is unavailable right now. ${getAssistantResponse(trimmed, { ...snapshot, minecraft, system, weather })}` },
+      ]);
+    } finally {
+      setIsAskingAI(false);
+    }
   }
 
   async function sendMessageToServer(event: FormEvent<HTMLFormElement>) {
@@ -442,7 +474,7 @@ export default function Home() {
         </article>
 
         <article className="telemetry-card ai-card">
-          <CardHeader index="06" label="House AI" meta="OLLAMA / READY" />
+          <CardHeader index="06" label="House AI" meta={`OLLAMA / ${aiStatus === "ready" ? "READY" : aiStatus === "checking" ? "CHECKING" : "OFFLINE"}`} />
           <div className="ai-body">
             <div className="ai-transcript" aria-live="polite">
               {messages.slice(-4).map((message, index) => (
@@ -451,13 +483,14 @@ export default function Home() {
                   <p>{message.text}</p>
                 </div>
               ))}
+              {isAskingAI ? <div className="chat-line chat-line--assistant"><span className="chat-prefix">LH</span><p>Thinking locally...</p></div> : null}
             </div>
             <div className="suggestions">
-              {suggestions.map((suggestion) => <button key={suggestion} onClick={() => submitQuestion(suggestion)}>{suggestion}</button>)}
+              {suggestions.map((suggestion) => <button key={suggestion} onClick={() => void submitQuestion(suggestion)} disabled={isAskingAI}>{suggestion}</button>)}
             </div>
-            <form className="ask-form" onSubmit={(event) => { event.preventDefault(); submitQuestion(); }}>
+            <form className="ask-form" onSubmit={(event) => { event.preventDefault(); void submitQuestion(); }}>
               <span className="input-prefix">&gt;</span>
-              <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask something about the house..." aria-label="Ask House AI something" />
+              <input value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isAskingAI} placeholder="Ask something about the house..." aria-label="Ask House AI something" />
               <button type="submit" aria-label="Send question">↵</button>
             </form>
           </div>
@@ -466,7 +499,7 @@ export default function Home() {
 
       <footer className="footerbar">
         <div className="footer-status"><StatusLight /> <span>LOCALHOUSE</span></div>
-        <div className="footer-services"><span><StatusLight /> INTERNET</span><span><StatusLight /> OLLAMA</span><button onClick={() => setIsWifiOpen(true)}><span className="wifi-glyph"><WifiIcon /></span> WIFI</button></div>
+        <div className="footer-services"><span><StatusLight /> INTERNET</span><span><StatusLight tone={aiStatus === "offline" ? "warn" : aiStatus === "checking" ? "muted" : "good"} /> OLLAMA</span><button onClick={() => setIsWifiOpen(true)}><span className="wifi-glyph"><WifiIcon /></span> WIFI</button></div>
         <div className="footer-build">{minecraftTelemetry === "live" ? "RCON TELEMETRY / LIVE" : "RCON TELEMETRY / WAITING"}</div>
       </footer>
 

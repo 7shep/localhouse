@@ -19,3 +19,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `qrcode.react` renders the guest Wi-Fi QR code in the utility modal.
 
 The data is intentionally mocked for v0.1. Each real provider can replace one entry in `featureModules` without expanding the page into a route handler: system metrics, WAN telemetry, weather, LAN presence, then Ollama.
+
+## Local AI
+
+House AI uses Ollama through the server-side `/api/ai` route. The default model is `qwen2.5:7b` at `http://127.0.0.1:11434`; override these with `OLLAMA_MODEL` and `OLLAMA_BASE_URL` in `.env.local` if needed. Make sure Ollama is running and the model is installed with `ollama pull qwen2.5:7b`.

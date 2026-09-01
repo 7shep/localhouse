@@ -186,6 +186,7 @@ h1 span { color: var(--green); }
 .suggestions button { cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 9px 11px; text-align: left; font-size: 9px; transition: all .2s; }
 .suggestions button::before { content: '+ '; color: var(--green-dark); }
 .suggestions button:hover { border-color: var(--green-dark); color: var(--ink); padding-left: 15px; }
+.suggestions button:disabled, .ask-form button:disabled { cursor: wait; opacity: .55; }
 .ask-form { grid-column: 1 / -1; border: 1px solid var(--line); min-height: 48px; display: grid; grid-template-columns: 30px 1fr 40px; align-items: center; background: #0d120e; }
 .input-prefix { color: var(--green); text-align: center; }
 .ask-form input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); padding: 0 8px; font-size: 11px; }
