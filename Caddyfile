@@ -1,0 +1,5 @@
+# LocalHouse: serve the dashboard at http://zew.house without :3000.
+# The http:// prefix intentionally keeps this local-only setup on plain HTTP.
+http://zew.house {
+    reverse_proxy 127.0.0.1:3000
+}
