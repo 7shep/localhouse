@@ -10,6 +10,8 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./*"] },
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
