@@ -42,22 +42,38 @@ export async function GET() {
       timezone: process.env.WEATHER_TIMEZONE ?? "America/Toronto",
       forecast_days: "1",
     }).toString();
-    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) });
-    if (!response.ok) throw new Error(`Weather provider returned ${response.status}`);
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok)
+      throw new Error(`Weather provider returned ${response.status}`);
     const data = await response.json();
     const weatherCode = Number(data.current.weather_code);
-    const updatedAt = new Intl.DateTimeFormat("en-CA", { timeZone: process.env.WEATHER_TIMEZONE ?? "America/Toronto", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const updatedAt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: process.env.WEATHER_TIMEZONE ?? "America/Toronto",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date());
 
-    return NextResponse.json({
-      location,
-      temperatureC: Math.round(Number(data.current.temperature_2m)),
-      condition: weatherLabels[weatherCode] ?? "UNKNOWN",
-      highC: Math.round(Number(data.daily.temperature_2m_max[0])),
-      lowC: Math.round(Number(data.daily.temperature_2m_min[0])),
-      updatedAt,
-    } satisfies WeatherStatus, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      {
+        location,
+        temperatureC: Math.round(Number(data.current.temperature_2m)),
+        condition: weatherLabels[weatherCode] ?? "UNKNOWN",
+        highC: Math.round(Number(data.daily.temperature_2m_max[0])),
+        lowC: Math.round(Number(data.daily.temperature_2m_min[0])),
+        updatedAt,
+      } satisfies WeatherStatus,
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Weather telemetry unavailable";
-    return NextResponse.json({ error: message }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const message =
+      error instanceof Error ? error.message : "Weather telemetry unavailable";
+    return NextResponse.json(
+      { error: message },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

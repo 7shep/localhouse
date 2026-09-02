@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -37,24 +38,44 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
-import { Message, MessageGroup } from "@/components/ui/message";
 import { Progress } from "@/components/ui/progress";
 import { AppSidebar } from "@/components/app-sidebar";
+import {
+  MessageBubble,
+  MessageBubbleContent,
+  MessageBubbleGroup,
+} from "@/components/agents/message-bubble";
+import { ReasoningText } from "@/components/agents/loading-states/reasoning-text";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { mockHouseSnapshot, type HouseSnapshot, type MinecraftStatus } from "@/lib/modules";
+import { mockHouseSnapshot, type HouseSnapshot, type MinecraftStatus, type SystemStatus } from "@/lib/modules";
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
+type ComputeSample = {
+  time: string;
+  uptimePercent: number;
+  cpuTemperatureC: number | null;
+  gpuTemperatureC: number | null;
+};
 
-const initialMessages: ChatMessage[] = [
-  { role: "assistant", text: "Good morning Alex, all systems are running normally overnight." },
-  { role: "user", text: "What's the weather like today?" },
-  { role: "assistant", text: "It's 22°C and overcast in Toronto right now — mild, good day to leave the windows cracked." },
-  { role: "user", text: "Thanks, keep an eye on the Minecraft server for me." },
-];
+const uptimeChartConfig = {
+  uptimePercent: { label: "Availability (%)", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
+const temperatureChartConfig = {
+  cpuTemperatureC: { label: "CPU temp (°C)", color: "var(--chart-2)" },
+  gpuTemperatureC: { label: "GPU temp (°C)", color: "var(--chart-3)" },
+} satisfies ChartConfig;
 
 const suggestions = ["Who's online?", "What happened while I was gone?", "Is anything offline?"];
 
@@ -67,6 +88,20 @@ function formatDuration(seconds: number) {
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return days > 0 ? `${days} days` : `${hours}h ${String(minutes).padStart(2, "0")}m`;
+}
+
+function formatBytes(bytes: number) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Math.max(0, bytes);
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = value >= 100 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function formatMinecraftTime(ticks: number) {
@@ -121,7 +156,7 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isWifiOpen, setIsWifiOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiStatus, setAiStatus] = useState<"checking" | "ready" | "offline">("checking");
   const [isAskingAI, setIsAskingAI] = useState(false);
   const [minecraft, setMinecraft] = useState<MinecraftStatus>(baseline.minecraft);
@@ -132,8 +167,12 @@ export default function Home() {
   const [serverChatStatus, setServerChatStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wakeState, setWakeState] = useState<"idle" | "waking" | "error">("idle");
   const [system, setSystem] = useState(baseline.system);
+  const [computeHistory, setComputeHistory] = useState<ComputeSample[]>([]);
   const [weather, setWeather] = useState(baseline.weather);
   const snapshot: HouseSnapshot = { ...baseline, minecraft, system, weather };
+  const hasTemperatureData = computeHistory.some(
+    (sample) => sample.cpuTemperatureC !== null || sample.gpuTemperatureC !== null,
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30000);
@@ -155,7 +194,31 @@ export default function Home() {
   }
 
   async function refreshSystemData() {
-    try { const response = await fetch("/api/system", { cache: "no-store" }); if (response.ok) setSystem(await response.json()); } catch { /* keep the last known snapshot */ }
+    try {
+      const response = await fetch("/api/system", { cache: "no-store" });
+      if (!response.ok) throw new Error("System telemetry unavailable");
+      const nextSystem = await response.json() as SystemStatus;
+      setSystem(nextSystem);
+      setComputeHistory((current) => [
+        ...current,
+        {
+          time: formatTime(new Date()),
+          uptimePercent: 100,
+          cpuTemperatureC: nextSystem.cpuTemperatureC,
+          gpuTemperatureC: nextSystem.gpuTemperatureC,
+        },
+      ].slice(-12));
+    } catch {
+      setComputeHistory((current) => [
+        ...current,
+        {
+          time: formatTime(new Date()),
+          uptimePercent: 0,
+          cpuTemperatureC: null,
+          gpuTemperatureC: null,
+        },
+      ].slice(-12));
+    }
   }
 
   async function refreshWeatherData() {
@@ -284,7 +347,7 @@ export default function Home() {
         <section className={`dashboard-grid ${isRefreshing ? "is-refreshing" : ""}`} aria-label="House overview">
           <div className="left-column">
             <Card className="dashboard-card weather-card">
-              <CardHeader className="dashboard-card-header"><CardTitle>Weather</CardTitle></CardHeader>
+              <CardHeader className="dashboard-card-header"><CardTitle className="metric-card-title">Weather</CardTitle></CardHeader>
               <CardContent className="weather-content">
                 <div><span className="location-label">{weather.location.replace(", ON", "")}</span><div className="temperature"><data value={weather.temperatureC}>{weather.temperatureC}</data><span>°C</span></div><em>{weather.condition.charAt(0) + weather.condition.slice(1).toLowerCase()}</em></div>
                 <span className="weather-orb">{weather.condition.toLowerCase().includes("rain") ? <CloudRain aria-hidden="true" /> : <Cloud aria-hidden="true" />}</span>
@@ -292,18 +355,53 @@ export default function Home() {
             </Card>
 
             <Card className="dashboard-card health-card">
-              <CardHeader className="dashboard-card-header"><CardTitle>System Health</CardTitle></CardHeader>
+              <CardHeader className="dashboard-card-header"><CardTitle className="metric-card-title">System Health</CardTitle></CardHeader>
               <CardContent className="health-list">
                 <HealthRow icon={Cpu} label="CPU Load" detail={`${system.cpuPercent}% active`} value={system.cpuPercent} />
-                <HealthRow icon={Database} label="Memory" detail={`${Math.round(system.memoryPercent * 0.24)} / 32 GB`} value={system.memoryPercent} />
-                <HealthRow icon={HardDrive} label="Storage" detail={`${(system.diskPercent / 28).toFixed(1)} / 4 TB used`} value={system.diskPercent} />
+                <HealthRow icon={Database} label="Memory" detail={`${formatBytes(system.totalMemoryBytes - system.freeMemoryBytes)} / ${formatBytes(system.totalMemoryBytes)}`} value={system.memoryPercent} />
+                <HealthRow icon={HardDrive} label="Storage" detail={`${formatBytes(system.totalDiskBytes - system.freeDiskBytes)} / ${formatBytes(system.totalDiskBytes)}`} value={system.diskPercent} />
                 <HealthRow icon={Activity} label="Network" detail={`${snapshot.internet.latencyMs} ms latency`} value={Math.min(100, snapshot.internet.latencyMs)} />
               </CardContent>
             </Card>
 
             <Card className="dashboard-card compute-card">
-              <CardHeader className="dashboard-card-header"><CardTitle>Compute</CardTitle></CardHeader>
-              <CardContent className="compute-stats"><div><span>UPTIME</span><strong>{formatDuration(system.uptimeSeconds)}</strong></div><div><span>TEMPERATURE</span><strong>46<small>°C</small></strong></div></CardContent>
+              <CardHeader className="dashboard-card-header"><CardTitle className="metric-card-title">Compute</CardTitle></CardHeader>
+              <CardContent className="compute-chart-content">
+                <section className="compute-chart-panel" aria-label="Uptime history">
+                  <span className="compute-chart-label">UPTIME</span>
+                  <ChartContainer config={uptimeChartConfig} className="compute-chart">
+                    <LineChart accessibilityLayer data={computeHistory} margin={{ top: 6, right: 12, bottom: 0, left: 8 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="time" tickLine={false} axisLine={false} minTickGap={32} tickMargin={8} />
+                      <YAxis tickLine={false} axisLine={false} width={40} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} allowDataOverflow tickFormatter={(value) => `${value}%`} />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+                      <Line dataKey="uptimePercent" type="linear" stroke="var(--color-uptimePercent)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-uptimePercent)" }} activeDot={{ r: 4 }} />
+                    </LineChart>
+                  </ChartContainer>
+                </section>
+                <section className="compute-chart-panel compute-chart-panel--temperature" aria-label="Temperature history">
+                  <div className="compute-chart-heading">
+                    <span className="compute-chart-label">TEMPERATURE</span>
+                    <span className="compute-chart-readings" aria-label="Current temperatures">
+                      CPU {system.cpuTemperatureC === null ? "unavailable" : `${system.cpuTemperatureC}°`} · GPU {system.gpuTemperatureC === null ? "unavailable" : `${system.gpuTemperatureC}°`}
+                    </span>
+                  </div>
+                  <div className="compute-chart-frame">
+                    <ChartContainer config={temperatureChartConfig} className="compute-chart">
+                    <LineChart accessibilityLayer data={computeHistory} margin={{ top: 6, right: 12, bottom: 0, left: 8 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="time" tickLine={false} axisLine={false} minTickGap={32} tickMargin={8} />
+                      <YAxis tickLine={false} axisLine={false} width={34} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(value) => `${value}°`} />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+                      <ChartLegend content={<ChartLegendContent className="compute-chart-legend" />} />
+                      <Line dataKey="cpuTemperatureC" type="monotone" stroke="var(--color-cpuTemperatureC)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-cpuTemperatureC)" }} activeDot={{ r: 4 }} connectNulls />
+                      <Line dataKey="gpuTemperatureC" type="monotone" stroke="var(--color-gpuTemperatureC)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-gpuTemperatureC)" }} activeDot={{ r: 4 }} connectNulls />
+                    </LineChart>
+                    </ChartContainer>
+                    {!hasTemperatureData ? <span className="compute-chart-empty">Waiting for temperature sensors…</span> : null}
+                  </div>
+                </section>
+              </CardContent>
             </Card>
           </div>
 
@@ -323,22 +421,25 @@ export default function Home() {
             <Card className="dashboard-card ai-card">
               <CardHeader className="dashboard-card-header"><div className="ai-title"><span className="ai-icon"><Bot aria-hidden="true" /></span><CardTitle>House AI</CardTitle></div><Badge className="status-badge" variant="outline"><StatusDot tone={aiStatus === "offline" ? "warn" : "good"} />{aiStatus === "offline" ? "Fallback" : "Ready"}</Badge></CardHeader>
               <CardContent className="chat-transcript" aria-live="polite">
-                <MessageGroup>
+                <MessageBubbleGroup spacing="default">
                   {messages.map((message, index) => (
-                    <Message align={message.role === "user" ? "end" : "start"} key={`${message.text}-${index}`}>
-                      <Bubble className="chat-message-bubble" variant={message.role === "user" ? "outline" : "secondary"} align={message.role === "user" ? "end" : "start"}>
-                        <BubbleContent>{message.text}</BubbleContent>
-                      </Bubble>
-                    </Message>
+                    <MessageBubble
+                      align={message.role === "user" ? "end" : "start"}
+                      animateIn
+                      key={`${message.text}-${index}`}
+                      variant={message.role === "user" ? "solid" : "soft"}
+                    >
+                      <MessageBubbleContent>{message.text}</MessageBubbleContent>
+                    </MessageBubble>
                   ))}
                   {isAskingAI ? (
-                    <Message align="start">
-                      <Bubble className="chat-message-bubble" variant="secondary" align="start">
-                        <BubbleContent>Thinking locally…</BubbleContent>
-                      </Bubble>
-                    </Message>
+                    <MessageBubble align="start" animateIn variant="ghost">
+                      <MessageBubbleContent>
+                        <ReasoningText variant="swap" />
+                      </MessageBubbleContent>
+                    </MessageBubble>
                   ) : null}
-                </MessageGroup>
+                </MessageBubbleGroup>
               </CardContent>
               <CardFooter className="chat-footer">
                 <form className="chat-form" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void submitQuestion(); }}>

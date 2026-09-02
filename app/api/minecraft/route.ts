@@ -1,13 +1,18 @@
 import { promises as fs } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { NextResponse } from "next/server";
-import type { MinecraftEvent, MinecraftPlayer, MinecraftStatus } from "../../../lib/modules";
+import type {
+  MinecraftEvent,
+  MinecraftPlayer,
+  MinecraftStatus,
+} from "../../../lib/modules";
 
 export const dynamic = "force-dynamic";
 
 const RCON_LOGIN = 3;
 const RCON_COMMAND = 2;
-const minecraftDirectory = process.env.MINECRAFT_DIR ?? "D:\\localhouse\\minecraft";
+const minecraftDirectory =
+  process.env.MINECRAFT_DIR ?? "D:\\localhouse\\minecraft";
 
 type RconPacket = { id: number; type: number; body: string };
 
@@ -25,7 +30,10 @@ function packet(id: number, type: number, body: string) {
 function readPacket(socket: Socket, timeoutMs = 2500): Promise<RconPacket> {
   return new Promise((resolve, reject) => {
     let buffer = Buffer.alloc(0);
-    const timer = setTimeout(() => finish(new Error("RCON request timed out")), timeoutMs);
+    const timer = setTimeout(
+      () => finish(new Error("RCON request timed out")),
+      timeoutMs,
+    );
 
     function finish(error?: Error, result?: RconPacket) {
       clearTimeout(timer);
@@ -36,8 +44,12 @@ function readPacket(socket: Socket, timeoutMs = 2500): Promise<RconPacket> {
       else if (result) resolve(result);
     }
 
-    function onError(error: Error) { finish(error); }
-    function onClose() { finish(new Error("RCON connection closed")); }
+    function onError(error: Error) {
+      finish(error);
+    }
+    function onClose() {
+      finish(new Error("RCON connection closed"));
+    }
     function onData(chunk: Buffer) {
       buffer = Buffer.concat([buffer, chunk]);
       if (buffer.length < 4) return;
@@ -74,9 +86,17 @@ async function queryMinecraft() {
     const timeOfDay = await rconCommand(socket, 4, "time query daytime");
     const weather = await rconCommand(socket, 5, "weather query");
 
-    const countMatch = list.match(/There are (\d+) of a max of (\d+) players online/);
+    const countMatch = list.match(
+      /There are (\d+) of a max of (\d+) players online/,
+    );
     const playersText = list.split(":").slice(1).join(":").trim();
-    const playerNames = playersText && playersText !== "-" ? playersText.split(",").map((name) => name.trim()).filter(Boolean) : [];
+    const playerNames =
+      playersText && playersText !== "-"
+        ? playersText
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean)
+        : [];
     const players: MinecraftPlayer[] = playerNames.map((name, index) => ({
       name,
       skinTone: (["lime", "orange", "blue"] as const)[index % 3],
@@ -84,7 +104,11 @@ async function queryMinecraft() {
     }));
     const dayNumber = Number(day.match(/-?\d+/)?.[0] ?? 0);
     const timeNumber = Number(timeOfDay.match(/-?\d+/)?.[0] ?? 0) % 24000;
-    const weatherName = weather.toLowerCase().includes("thunder") ? "THUNDER" : weather.toLowerCase().includes("rain") ? "RAIN" : "CLEAR";
+    const weatherName = weather.toLowerCase().includes("thunder")
+      ? "THUNDER"
+      : weather.toLowerCase().includes("rain")
+        ? "RAIN"
+        : "CLEAR";
     const events = await readRecentEvents();
 
     return {
@@ -92,7 +116,10 @@ async function queryMinecraft() {
       playerCount: Number(countMatch?.[1] ?? players.length),
       maxPlayers: Number(countMatch?.[2] ?? 20),
       players,
-      world: await readServerProperty("level-name", process.env.MINECRAFT_WORLD ?? "world"),
+      world: await readServerProperty(
+        "level-name",
+        process.env.MINECRAFT_WORLD ?? "world",
+      ),
       day: dayNumber,
       timeOfDay: timeNumber,
       weather: weatherName,
@@ -115,8 +142,14 @@ async function connectRcon(host: string, port: number) {
       connection.destroy();
       reject(new Error("Unable to connect to Minecraft RCON"));
     }, 2500);
-    connection.once("connect", () => { clearTimeout(timer); resolve(connection); });
-    connection.once("error", (error) => { clearTimeout(timer); reject(error); });
+    connection.once("connect", () => {
+      clearTimeout(timer);
+      resolve(connection);
+    });
+    connection.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
   });
 
   socket.write(packet(1, RCON_LOGIN, password));
@@ -141,13 +174,34 @@ async function sendServerMessage(message: string) {
 
 async function readRecentEvents(): Promise<MinecraftEvent[]> {
   try {
-    const log = await fs.readFile(`${minecraftDirectory}\\logs\\latest.log`, "utf8");
-    const lines = log.split(/\r?\n/).filter((line) => /joined the game|left the game|was slain|has made the advancement|completed the challenge|was blown up|fell from a high place/i.test(line));
-    return lines.slice(-4).reverse().map((line) => {
-      const time = line.match(/^\[(\d{2}:\d{2}:\d{2})\]/)?.[1]?.slice(0, 5) ?? "--:--";
-      const text = line.replace(/^\[[^\]]+\]\s*\[[^\]]+\]:\s*/, "");
-      return { time, text, tone: /slain|blown up|fell from/i.test(text) ? "warn" : /joined|advancement|challenge/i.test(text) ? "good" : "muted" };
-    });
+    const log = await fs.readFile(
+      `${minecraftDirectory}\\logs\\latest.log`,
+      "utf8",
+    );
+    const lines = log
+      .split(/\r?\n/)
+      .filter((line) =>
+        /joined the game|left the game|was slain|has made the advancement|completed the challenge|was blown up|fell from a high place/i.test(
+          line,
+        ),
+      );
+    return lines
+      .slice(-4)
+      .reverse()
+      .map((line) => {
+        const time =
+          line.match(/^\[(\d{2}:\d{2}:\d{2})\]/)?.[1]?.slice(0, 5) ?? "--:--";
+        const text = line.replace(/^\[[^\]]+\]\s*\[[^\]]+\]:\s*/, "");
+        return {
+          time,
+          text,
+          tone: /slain|blown up|fell from/i.test(text)
+            ? "warn"
+            : /joined|advancement|challenge/i.test(text)
+              ? "good"
+              : "muted",
+        };
+      });
   } catch {
     return [];
   }
@@ -155,8 +209,13 @@ async function readRecentEvents(): Promise<MinecraftEvent[]> {
 
 async function readServerProperty(key: string, fallback: string) {
   try {
-    const properties = await fs.readFile(`${minecraftDirectory}\\server.properties`, "utf8");
-    const value = properties.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim();
+    const properties = await fs.readFile(
+      `${minecraftDirectory}\\server.properties`,
+      "utf8",
+    );
+    const value = properties
+      .match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]
+      ?.trim();
     return value || fallback;
   } catch {
     return fallback;
@@ -165,11 +224,19 @@ async function readServerProperty(key: string, fallback: string) {
 
 async function estimateUptimeSeconds() {
   try {
-    const log = await fs.readFile(`${minecraftDirectory}\\logs\\latest.log`, "utf8");
+    const log = await fs.readFile(
+      `${minecraftDirectory}\\logs\\latest.log`,
+      "utf8",
+    );
     const firstTimestamp = log.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/m);
     if (!firstTimestamp) return 0;
     const started = new Date();
-    started.setHours(Number(firstTimestamp[1]), Number(firstTimestamp[2]), Number(firstTimestamp[3]), 0);
+    started.setHours(
+      Number(firstTimestamp[1]),
+      Number(firstTimestamp[2]),
+      Number(firstTimestamp[3]),
+      0,
+    );
     if (started.getTime() > Date.now()) started.setDate(started.getDate() - 1);
     return Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000));
   } catch {
@@ -179,25 +246,50 @@ async function estimateUptimeSeconds() {
 
 export async function GET() {
   try {
-    return NextResponse.json(await queryMinecraft(), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(await queryMinecraft(), {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Minecraft telemetry unavailable";
-    return NextResponse.json({ error: message }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Minecraft telemetry unavailable";
+    return NextResponse.json(
+      { error: message },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { message?: unknown };
-    const message = typeof body.message === "string"
-      ? body.message.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 240)
-      : "";
-    if (!message) return NextResponse.json({ error: "Message cannot be empty" }, { status: 400 });
+    const body = (await request.json()) as { message?: unknown };
+    const message =
+      typeof body.message === "string"
+        ? body.message
+            .replace(/[\u0000-\u001f\u007f]/g, " ")
+            .trim()
+            .slice(0, 240)
+        : "";
+    if (!message)
+      return NextResponse.json(
+        { error: "Message cannot be empty" },
+        { status: 400 },
+      );
 
     await sendServerMessage(message);
-    return NextResponse.json({ ok: true, message }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, message },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to send message to Minecraft";
-    return NextResponse.json({ error: message }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send message to Minecraft";
+    return NextResponse.json(
+      { error: message },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

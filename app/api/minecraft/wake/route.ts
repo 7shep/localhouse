@@ -5,7 +5,8 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const minecraftDirectory = process.env.MINECRAFT_DIR ?? "D:\\localhouse\\minecraft";
+const minecraftDirectory =
+  process.env.MINECRAFT_DIR ?? "D:\\localhouse\\minecraft";
 
 function isMinecraftListening() {
   const host = process.env.MINECRAFT_HOST ?? "127.0.0.1";
@@ -26,12 +27,16 @@ function isMinecraftListening() {
 function startMinecraft() {
   const javaPath = process.env.MINECRAFT_JAVA_PATH ?? "java";
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(javaPath, ["-Xms1G", "-Xmx2G", "-jar", "paper.jar", "--nogui"], {
-      cwd: minecraftDirectory,
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
+    const child = spawn(
+      javaPath,
+      ["-Xms1G", "-Xmx2G", "-jar", "paper.jar", "--nogui"],
+      {
+        cwd: minecraftDirectory,
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
     child.once("spawn", () => {
       child.unref();
       resolve();
@@ -48,9 +53,16 @@ export async function POST() {
 
     await fs.access(`${minecraftDirectory}\\paper.jar`);
     await startMinecraft();
-    return NextResponse.json({ ok: true, status: "starting" }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, status: "starting" },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to wake Minecraft";
-    return NextResponse.json({ error: message }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const message =
+      error instanceof Error ? error.message : "Unable to wake Minecraft";
+    return NextResponse.json(
+      { error: message },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

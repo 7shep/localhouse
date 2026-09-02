@@ -6,8 +6,16 @@ export type InternetStatus = {
 
 export type SystemStatus = {
   cpuPercent: number;
+  cpuLogicalCores: number;
+  cpuSpeedMhz: number;
+  cpuTemperatureC: number | null;
+  gpuTemperatureC: number | null;
   memoryPercent: number;
+  totalMemoryBytes: number;
+  freeMemoryBytes: number;
   diskPercent: number;
+  totalDiskBytes: number;
+  freeDiskBytes: number;
   uptimeSeconds: number;
 };
 
@@ -68,7 +76,20 @@ export interface FeatureModule<T> {
 
 export const mockHouseSnapshot: HouseSnapshot = {
   internet: { online: true, latencyMs: 14, lastOutage: "3 DAYS AGO / 02:14" },
-  system: { cpuPercent: 18, memoryPercent: 42, diskPercent: 31, uptimeSeconds: 26072 },
+  system: {
+    cpuPercent: 18,
+    cpuLogicalCores: 8,
+    cpuSpeedMhz: 3200,
+    cpuTemperatureC: null,
+    gpuTemperatureC: null,
+    memoryPercent: 42,
+    totalMemoryBytes: 16 * 1024 ** 3,
+    freeMemoryBytes: 9.28 * 1024 ** 3,
+    diskPercent: 31,
+    totalDiskBytes: 1024 ** 4,
+    freeDiskBytes: 0.69 * 1024 ** 4,
+    uptimeSeconds: 26072,
+  },
   weather: { location: "TORONTO, ON", temperatureC: 21, condition: "PARTLY CLOUDY", highC: 24, lowC: 16, updatedAt: "08:55" },
   presence: { name: "Alex", state: "home", device: "IPHONE", lastSeen: "JUST NOW" },
   minecraft: {
